@@ -1,0 +1,13 @@
+variable "project_name" { type = string }
+variable "environment" { type = string }
+variable "eks_cluster_version" { type = string }
+variable "eks_node_instance_type" { type = string }
+variable "eks_node_min" { type = number }
+variable "eks_node_max" { type = number }
+variable "eks_node_desired" { type = number }
+variable "eks_cluster_role_arn" { type = string }
+variable "eks_nodes_role_arn" { type = string }
+variable "eks_nodes_sg_id" { type = string }
+variable "public_subnet_ids" { type = list(string) }
+variable "private_subnet_ids" { type = list(string) }
+variable "vpc_id" { type = string }

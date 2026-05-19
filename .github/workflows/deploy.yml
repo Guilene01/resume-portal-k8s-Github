@@ -1,0 +1,207 @@
+# This pipeline manages your APPLICATION
+# It runs ONLY when you change app code, frontend, or k8s files
+# It does NOT touch infrastructure (that's terraform.yml's job)
+name: Build & Deploy to EKS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'       # Flask backend changed
+      - 'frontend/**'  # Nginx frontend changed
+      - 'k8s/**'       # Kubernetes manifests changed
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER: resume-portal-cluster
+  # ECR URLs where Docker images will be stored
+  ECR_FLASK: 977098999802.dkr.ecr.us-east-1.amazonaws.com/resume-portal-flask
+  ECR_NGINX: 977098999802.dkr.ecr.us-east-1.amazonaws.com/resume-portal-nginx
+
+jobs:
+  # ============================================
+  # JOB 1: BUILD & DEPLOY
+  # Builds Docker images and deploys to EKS
+  # ============================================
+  build-and-deploy:
+    name: Build, Push & Deploy
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write  # Required for OIDC
+      contents: read   # Read repo files
+
+    steps:
+    # Step 1 - Download your code
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # Step 2 - Login to AWS using OIDC
+    # No stored credentials - GitHub proves identity
+    # and gets a temporary AWS token
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::977098999802:role/resume-portal-github-actions-role
+        role-session-name: GitHubActions
+        aws-region: ${{ env.AWS_REGION }}
+
+    # Step 3 - Login to ECR (AWS Docker registry)
+    # So we can push images to it
+    - name: Login to ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    # Step 4 - Build Flask Docker image and push to ECR
+    # Tagged with both the commit SHA (unique) and latest
+    # SHA tag: 977098999802.ecr.../resume-portal-flask:abc123
+    # Latest tag: 977098999802.ecr.../resume-portal-flask:latest
+    - name: Build & Push Flask image
+      run: |
+        docker build -t $ECR_FLASK:${{ github.sha }} -t $ECR_FLASK:latest ./app
+        docker push $ECR_FLASK:${{ github.sha }}
+        docker push $ECR_FLASK:latest
+
+    # Step 5 - Build Nginx Docker image and push to ECR
+    # Same dual tagging as Flask
+    - name: Build & Push Nginx image
+      run: |
+        docker build -t $ECR_NGINX:${{ github.sha }} -t $ECR_NGINX:latest ./frontend
+        docker push $ECR_NGINX:${{ github.sha }}
+        docker push $ECR_NGINX:latest
+
+    # Step 6 - Connect kubectl to your EKS cluster
+    # Without this kubectl doesn't know which cluster to talk to
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --name $EKS_CLUSTER --region $AWS_REGION
+
+    # Step 7 - Apply all K8s manifests
+    # Creates resources if they don't exist
+    # Updates them if they already exist
+    - name: Apply K8s manifests
+      run: |
+        kubectl apply -f k8s/flask/deployment.yaml   # Flask pods
+        kubectl apply -f k8s/flask/service.yaml      # Flask service
+        kubectl apply -f k8s/flask/hpa.yaml          # Auto-scaling
+        kubectl apply -f k8s/nginx/deployment.yaml   # Nginx pods
+        kubectl apply -f k8s/nginx/service.yaml      # Nginx service
+        kubectl apply -f k8s/ingress.yaml            # ALB ingress rules
+
+    # Step 8 - Update Flask pods with new image
+    # Uses commit SHA so EKS knows image actually changed
+    # Waits up to 5 min for rollout to complete
+    - name: Update Flask image
+      run: |
+        kubectl set image deployment/flask-deployment \
+          flask=$ECR_FLASK:${{ github.sha }}
+        kubectl rollout status deployment/flask-deployment --timeout=300s
+
+    # Step 9 - Update Nginx pods with new image
+    # Same as Flask - waits for rollout to complete
+    - name: Update Nginx image
+      run: |
+        kubectl set image deployment/nginx-deployment \
+          nginx=$ECR_NGINX:${{ github.sha }}
+        kubectl rollout status deployment/nginx-deployment --timeout=300s
+
+    # Step 10 - Verify everything is running correctly
+    - name: Verify deployment
+      run: |
+        echo "=== Pods ==="
+        kubectl get pods           # Shows running pods
+        echo "=== Services ==="
+        kubectl get services       # Shows services
+        echo "=== Ingress ==="
+        kubectl get ingress        # Shows ALB ingress & URL
+        echo "=== HPA ==="
+        kubectl get hpa            # Shows auto-scaling status
+        echo ""
+        echo "✅ App is live at https://gamela.shop"
+        echo "⏳ Infrastructure will be destroyed in 30 minutes..."
+
+  # ============================================
+  # JOB 2: DESTROY AFTER 30 MINUTES
+  # Cleans up everything to save money
+  # Runs after Job 1 completes successfully
+  # ============================================
+  destroy:
+    name: Destroy Everything After 30 Minutes
+    runs-on: ubuntu-latest
+    needs: build-and-deploy  # Only runs after Job 1 succeeds
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # Wait 30 minutes so you can test the live app
+    - name: Wait 30 minutes
+      run: |
+        echo "✅ Deployment successful!"
+        echo "⏳ Waiting 30 minutes before destroying..."
+        echo "🌐 App is live at https://gamela.shop"
+        for i in $(seq 30 -1 1); do
+          echo "⏳ $i minutes remaining..."
+          sleep 60
+        done
+        echo "⏰ Time is up! Starting destroy..."
+
+    # Login to AWS again - previous token expired during the wait
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::977098999802:role/resume-portal-github-actions-role
+        role-session-name: GitHubActionsDestroy
+        aws-region: ${{ env.AWS_REGION }}
+
+    # Connect kubectl to cluster again
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --name $EKS_CLUSTER --region $AWS_REGION
+
+    # Delete K8s resources FIRST before terraform destroy
+    # Important: ALB must be deleted before VPC can be destroyed
+    - name: Delete K8s resources first
+      run: |
+        echo "=== Removing K8s resources ==="
+        kubectl delete -f k8s/ingress.yaml --ignore-not-found
+        kubectl delete -f k8s/flask/hpa.yaml --ignore-not-found
+        kubectl delete -f k8s/flask/service.yaml --ignore-not-found
+        kubectl delete -f k8s/flask/deployment.yaml --ignore-not-found
+        kubectl delete -f k8s/nginx/service.yaml --ignore-not-found
+        kubectl delete -f k8s/nginx/deployment.yaml --ignore-not-found
+        echo "⏳ Waiting for resources to terminate..."
+        sleep 60  # Give AWS time to delete the ALB
+
+    # Install Terraform on the runner
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.10.0
+
+    # Connect to S3 state backend
+    - name: Terraform Init
+      working-directory: terraform
+      run: terraform init
+
+    # Destroy ALL AWS infrastructure
+    # EKS, RDS, VPC, S3, CloudFront, Route53, IAM
+    - name: Terraform Destroy
+      working-directory: terraform
+      run: |
+        echo "=== Destroying all infrastructure ==="
+        terraform destroy -auto-approve
+        echo "✅ All infrastructure destroyed!"
+
+    - name: Notify destroy complete
+      run: |
+        echo "======================================"
+        echo "✅ DESTROY COMPLETE"
+        echo "All AWS resources have been destroyed"
+        echo "💰 No more charges accumulating"
+        echo "======================================"

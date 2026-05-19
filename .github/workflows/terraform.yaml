@@ -1,0 +1,177 @@
+# This pipeline manages your AWS INFRASTRUCTURE
+# It runs ONLY when you change files in the terraform/ folder
+name: Terraform Infrastructure
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'   # Only triggers if terraform files changed
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'   # Also runs on PRs to review changes before merging
+
+env:
+  AWS_REGION: us-east-1  # Your AWS region
+  TF_VERSION: 1.10.0     # Terraform version to use
+
+jobs:
+  # ============================================
+  # JOB 1: PLAN & APPLY
+  # Runs when you push or open a PR
+  # ============================================
+  terraform:
+    name: Terraform Plan & Apply
+    runs-on: ubuntu-latest  # Runs on a fresh Linux machine
+
+    permissions:
+      id-token: write      # Required for OIDC - allows GitHub to get AWS token
+      contents: read       # Read your repo files
+      pull-requests: write # Post plan results as PR comment
+
+    defaults:
+      run:
+        working-directory: terraform  # All commands run inside terraform/ folder
+
+    steps:
+    # Step 1 - Download your code
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # Step 2 - Login to AWS using OIDC (no stored credentials!)
+    # GitHub proves its identity to AWS and gets a temporary token
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::977098999802:role/resume-portal-github-actions-role
+        role-session-name: GitHubActionsTerraform
+        aws-region: ${{ env.AWS_REGION }}
+
+    # Step 3 - Install Terraform on the runner
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    # Step 4 - Download providers and connect to S3 state backend
+    - name: Terraform Init
+      run: terraform init
+
+    # Step 5 - Check code formatting (fails if not formatted)
+    - name: Terraform Format Check
+      run: terraform fmt -check
+
+    # Step 6 - Validate syntax and logic
+    - name: Terraform Validate
+      run: terraform validate
+
+    # Step 7 - Show what WILL be created/changed/destroyed
+    # Only runs on Pull Requests (not on direct push to main)
+    - name: Terraform Plan
+      id: plan
+      run: terraform plan -out=tfplan -no-color
+      if: github.event_name == 'pull_request'
+
+    # Step 8 - Post the plan as a comment on the PR
+    # So your team can review before merging
+    - name: Comment Plan on PR
+      uses: actions/github-script@v7
+      if: github.event_name == 'pull_request'
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const output = `#### Terraform Plan 📖 \`${{ steps.plan.outcome }}\`
+          <details><summary>Show Plan</summary>
+
+          \`\`\`terraform
+          ${{ steps.plan.outputs.stdout }}
+          \`\`\`
+
+          </details>
+          *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          })
+
+    # Step 9 - Actually create/update AWS infrastructure
+    # Only runs on direct push to main (not PRs)
+    - name: Terraform Apply
+      run: terraform apply -auto-approve
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    # Step 10 - Show all output values after apply
+    - name: Terraform Outputs
+      run: terraform output
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+  # ============================================
+  # JOB 2: DESTROY AFTER 30 MINUTES
+  # Runs after Job 1 completes (only on push to main)
+  # Saves money by destroying everything after testing
+  # ============================================
+  destroy:
+    name: Destroy Infrastructure After 30 Minutes
+    runs-on: ubuntu-latest
+    needs: terraform  # Waits for Job 1 to finish first
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    permissions:
+      id-token: write
+      contents: read
+
+    defaults:
+      run:
+        working-directory: terraform
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # Wait 30 minutes so you can test the infrastructure
+    - name: Wait 30 minutes
+      run: |
+        echo "✅ Terraform apply complete!"
+        echo "⏳ Waiting 30 minutes before destroying..."
+        for i in $(seq 30 -1 1); do
+          echo "⏳ $i minutes remaining..."
+          sleep 60
+        done
+        echo "⏰ Time is up! Starting destroy..."
+
+    # Login to AWS again (token expired after 30 min wait)
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::977098999802:role/resume-portal-github-actions-role
+        role-session-name: GitHubActionsDestroy
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Terraform Init
+      run: terraform init
+
+    # Destroy everything Terraform created
+    - name: Terraform Destroy
+      run: |
+        echo "=== Destroying all infrastructure ==="
+        terraform destroy -auto-approve
+        echo "✅ All infrastructure destroyed!"
+
+    - name: Notify destroy complete
+      run: |
+        echo "======================================"
+        echo "✅ DESTROY COMPLETE"
+        echo "All AWS resources have been destroyed"
+        echo "💰 No more charges accumulating"
+        echo "======================================"

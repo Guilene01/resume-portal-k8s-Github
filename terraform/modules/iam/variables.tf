@@ -1,0 +1,9 @@
+variable "project_name" { type = string }
+variable "environment" { type = string }
+variable "aws_region" { type = string }
+variable "account_id" { type = string }
+variable "oidc_provider_arn" { type = string }
+variable "oidc_provider" { type = string }
+variable "resumes_bucket_name" { type = string }
+variable "github_username" { type = string }
+variable "github_repo" { type = string }
