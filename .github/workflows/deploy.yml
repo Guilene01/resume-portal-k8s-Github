@@ -16,8 +16,8 @@ env:
   AWS_REGION: us-east-1
   EKS_CLUSTER: resume-portal-cluster
   # ECR URLs where Docker images will be stored
-  ECR_FLASK: 977098999802.dkr.ecr.us-east-1.amazonaws.com/resume-portal-flask
-  ECR_NGINX: 977098999802.dkr.ecr.us-east-1.amazonaws.com/resume-portal-nginx
+  ECR_FLASK: ${{ secrets.AWS_ACCOUNT_ID}}.dkr.ecr.us-east-1.amazonaws.com/resume-portal-flask
+  ECR_NGINX: ${{ secrets.AWS_ACCOUNT_ID}}.dkr.ecr.us-east-1.amazonaws.com/resume-portal-nginx
 
 jobs:
   # ============================================
@@ -43,7 +43,7 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: arn:aws:iam::977098999802:role/resume-portal-github-actions-role
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN}}
         role-session-name: GitHubActions
         aws-region: ${{ env.AWS_REGION }}
 
@@ -55,8 +55,8 @@ jobs:
 
     # Step 4 - Build Flask Docker image and push to ECR
     # Tagged with both the commit SHA (unique) and latest
-    # SHA tag: 977098999802.ecr.../resume-portal-flask:abc123
-    # Latest tag: 977098999802.ecr.../resume-portal-flask:latest
+    # SHA tag: ${{ secrets.AWS_ACCOUNT_ID}}.ecr.../resume-portal-flask:abc123
+    # Latest tag: ${{ secrets.AWS_ACCOUNT_ID}}.ecr.../resume-portal-flask:latest
     - name: Build & Push Flask image
       run: |
         docker build -t $ECR_FLASK:${{ github.sha }} -t $ECR_FLASK:latest ./app
@@ -155,7 +155,7 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: arn:aws:iam::977098999802:role/resume-portal-github-actions-role
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN}}
         role-session-name: GitHubActionsDestroy
         aws-region: ${{ env.AWS_REGION }}
 

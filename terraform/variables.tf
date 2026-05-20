@@ -103,13 +103,5 @@ variable "sender_email" {
   type        = string
   default     = "guileneerna@gmail.com"
 }
-variable "github_username" {
-  description = "GitHub username or organization"
-  type        = string
-}
 
-variable "github_repo" {
-  description = "GitHub repository name"
-  type        = string
-  default     = "resume-portal-k8s-Github"
-}
+

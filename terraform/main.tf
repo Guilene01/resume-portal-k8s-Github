@@ -45,8 +45,6 @@ module "iam" {
   oidc_provider_arn   = module.eks.oidc_provider_arn
   oidc_provider       = module.eks.oidc_provider
   resumes_bucket_name = module.s3.resumes_bucket_name
-  github_username     = var.github_username
-  github_repo         = var.github_repo
 
   depends_on = [module.eks]
 }

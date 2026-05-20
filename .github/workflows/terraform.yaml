@@ -46,7 +46,7 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: arn:aws:iam::977098999802:role/resume-portal-github-actions-role
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
         role-session-name: GitHubActionsTerraform
         aws-region: ${{ env.AWS_REGION }}
 
@@ -149,7 +149,7 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: arn:aws:iam::977098999802:role/resume-portal-github-actions-role
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
         role-session-name: GitHubActionsDestroy
         aws-region: ${{ env.AWS_REGION }}
 
