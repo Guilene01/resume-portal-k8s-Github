@@ -72,7 +72,7 @@ module "eks" {
   eks_nodes_sg_id        = module.vpc.eks_nodes_sg_id
   public_subnet_ids      = module.vpc.public_subnet_ids
   private_subnet_ids     = module.vpc.private_subnet_ids
-  vpc_id = module.vpc.vpc_id
+  vpc_id                 = module.vpc.vpc_id
 
   depends_on = [module.vpc, module.iam_base]
 }

@@ -2,7 +2,7 @@
 resource "aws_ecr_repository" "flask" {
   name                 = "${var.project_name}-flask"
   image_tag_mutability = "MUTABLE"
-  force_delete = true
+  force_delete         = true
 
   image_scanning_configuration {
     scan_on_push = true
@@ -18,7 +18,7 @@ resource "aws_ecr_repository" "flask" {
 resource "aws_ecr_repository" "nginx" {
   name                 = "${var.project_name}-nginx"
   image_tag_mutability = "MUTABLE"
-  force_delete = true
+  force_delete         = true
 
   image_scanning_configuration {
     scan_on_push = true
