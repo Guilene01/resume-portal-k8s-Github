@@ -70,13 +70,11 @@ def get_db_connection():
 def health():
     """ALB hits this every 30s. Returns 200 if app is healthy."""
     try:
-        # FIX #2: Use context manager so the connection is always closed
-        with get_db_connection() as conn:
-            pass
+        conn = get_db_connection()
+        conn.close()
         return jsonify({'status': 'healthy'}), 200
     except Exception as e:
         return jsonify({'status': 'unhealthy', 'error': str(e)}), 503
-
 
 
 
