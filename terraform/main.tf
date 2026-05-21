@@ -73,6 +73,7 @@ module "eks" {
   public_subnet_ids      = module.vpc.public_subnet_ids
   private_subnet_ids     = module.vpc.private_subnet_ids
   vpc_id                 = module.vpc.vpc_id
+   account_id = data.aws_caller_identity.current.account_id
 
   depends_on = [module.vpc, module.iam_base]
 }
