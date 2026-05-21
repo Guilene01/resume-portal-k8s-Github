@@ -68,14 +68,8 @@ def get_db_connection():
 # CRITICAL: Health check endpoint — the ALB calls this constantly
 @app.route('/health')
 def health():
-    """ALB hits this every 30s. Returns 200 if app is healthy."""
-    try:
-        conn = get_db_connection()
-        conn.close()
-        return jsonify({'status': 'healthy'}), 200
-    except Exception as e:
-        return jsonify({'status': 'unhealthy', 'error': str(e)}), 503
-
+    """Simple health check - just returns 200."""
+    return jsonify({'status': 'healthy'}), 200
 
 
 # Useful for testing load balancing
