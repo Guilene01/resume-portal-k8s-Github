@@ -4,3 +4,4 @@ environment     = "prod"
 domain_name     = "yourdomain.com"
 github_username = "your-github-username"
 github_repo     = "resume-portal-k8s-Github" 
+ 
