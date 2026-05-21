@@ -9,6 +9,34 @@ from flask import Flask, request, jsonify
 import boto3
 import psycopg2
 
+def init_db():
+    """Create tables if they don't exist on startup."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS applications (
+                id SERIAL PRIMARY KEY,
+                full_name VARCHAR(255) NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                phone VARCHAR(50),
+                position VARCHAR(255),
+                skills TEXT,
+                resume_s3_key VARCHAR(500),
+                submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        ''')
+        conn.commit()
+        cursor.close()
+        conn.close()
+        app.logger.info('Database initialized successfully!')
+    except Exception as e:
+        app.logger.error(f'Database initialization failed: {e}')
+
+# Run on startup
+with app.app_context():
+    init_db()
+
 
 app = Flask(__name__)
 
