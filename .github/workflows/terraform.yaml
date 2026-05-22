@@ -134,12 +134,12 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # Wait 30 minutes so you can test the infrastructure
-    - name: Wait 60 minutes
+    # Wait 90 minutes so you can test the infrastructure
+    - name: Wait 90 minutes
       run: |
         echo "✅ Terraform apply complete!"
-        echo "⏳ Waiting 60 minutes before destroying..."
-        for i in $(seq 60 -1 1); do
+        echo "⏳ Waiting 90 minutes before destroying..."
+        for i in $(seq 90 -1 1); do
           echo "⏳ $i minutes remaining..."
           sleep 60
         done

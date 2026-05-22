@@ -150,7 +150,7 @@ jobs:
         echo "✅ Deployment successful!"
         echo "⏳ Waiting 1 hours before destroying..."
         echo "🌐 App is live at https://gamela.shop"
-        for i in $(seq 40 -1 1); do
+        for i in $(seq 60 -1 1); do
           echo "⏳ $i minutes remaining..."
           sleep 60
         done
