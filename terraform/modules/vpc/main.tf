@@ -152,11 +152,20 @@ resource "aws_security_group" "rds" {
   description = "Security group for RDS"
   vpc_id      = aws_vpc.main.id
 
+  # Allow from EKS nodes security group
   ingress {
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
     security_groups = [aws_security_group.eks_nodes.id]
+  }
+
+  # Allow from entire VPC CIDR (covers pod IPs)
+  ingress {
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
   }
 
   egress {

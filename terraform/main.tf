@@ -92,3 +92,11 @@ module "rds" {
 
   depends_on = [module.vpc]
 }
+# SES Module
+module "ses" {
+  source = "./modules/ses"
+
+  project_name = var.project_name
+  environment  = var.environment
+  sender_email = var.sender_email
+}

@@ -16,7 +16,7 @@ metadata:
 spec:
   ingressClassName: alb
   rules:
-  - host: gamela.shop
+  - host: resume.gamela.shop
     http:
       paths:
       - path: /
