@@ -60,7 +60,7 @@ jobs:
         CERT_ARN=$(aws acm list-certificates \
           --region us-east-1 \
           --query 'CertificateSummaryList[?DomainName==`gamela.shop`].CertificateArn' \
-          --output text)
+          --output text) | awk '{print $1}'
         echo "Certificate ARN: $CERT_ARN"
         sed -i "s|alb.ingress.kubernetes.io/certificate-arn:.*|alb.ingress.kubernetes.io/certificate-arn: $CERT_ARN|" k8s/ingress.yaml
         echo "✅ Ingress certificate ARN updated"
