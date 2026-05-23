@@ -60,7 +60,7 @@ jobs:
         CERT_ARN=$(aws acm list-certificates \
           --region us-east-1 \
           --query 'CertificateSummaryList[?DomainName==`gamela.shop`].CertificateArn' \
-          --output text) | awk '{print $1}'
+          --output text | awk '{print $1}')
         echo "Certificate ARN: $CERT_ARN"
         sed -i "s|alb.ingress.kubernetes.io/certificate-arn:.*|alb.ingress.kubernetes.io/certificate-arn: $CERT_ARN|" k8s/ingress.yaml
         echo "✅ Ingress certificate ARN updated"
@@ -119,7 +119,6 @@ jobs:
           --query 'HostedZones[?Name==`gamela.shop.`].Id' \
           --output text | sed 's|/hostedzone/||')
 
-        # Update api.gamela.shop
         aws route53 change-resource-record-sets \
           --hosted-zone-id $ZONE_ID \
           --change-batch "{
@@ -127,7 +126,7 @@ jobs:
               {
                 \"Action\": \"UPSERT\",
                 \"ResourceRecordSet\": {
-                  \"Name\": \"api.gamela.shop\",
+                  \"Name\": \"resume.gamela.shop\",
                   \"Type\": \"A\",
                   \"AliasTarget\": {
                     \"HostedZoneId\": \"Z35SXDOTRQ7X7K\",
@@ -139,7 +138,7 @@ jobs:
               {
                 \"Action\": \"UPSERT\",
                 \"ResourceRecordSet\": {
-                  \"Name\": \"gamela.shop\",
+                  \"Name\": \"api.gamela.shop\",
                   \"Type\": \"A\",
                   \"AliasTarget\": {
                     \"HostedZoneId\": \"Z35SXDOTRQ7X7K\",
@@ -151,7 +150,7 @@ jobs:
             ]
           }"
         echo "✅ Route 53 updated:"
-        echo "   gamela.shop → $ALB"
+        echo "   resume.gamela.shop → $ALB"
         echo "   api.gamela.shop → $ALB"
 
     - name: Verify deployment
@@ -165,7 +164,7 @@ jobs:
         echo "=== HPA ==="
         kubectl get hpa
         echo ""
-        echo "✅ Frontend live at https://gamela.shop"
+        echo "✅ Frontend live at https://resume.gamela.shop"
         echo "✅ API live at https://api.gamela.shop"
         echo "⏳ Infrastructure will be destroyed in 30 minutes..."
 
@@ -185,7 +184,7 @@ jobs:
       run: |
         echo "✅ Deployment successful!"
         echo "⏳ Waiting 30 minutes before destroying..."
-        echo "🌐 Frontend: https://gamela.shop"
+        echo "🌐 Frontend: https://resume.gamela.shop"
         echo "🌐 API: https://api.gamela.shop"
         for i in $(seq 30 -1 1); do
           echo "⏳ $i minutes remaining..."
