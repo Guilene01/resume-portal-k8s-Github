@@ -55,6 +55,8 @@ Stage 3 — Kubernetes on EKS
   IRSA for secure pod-level AWS access
   Terraform for all infrastructure as code
   GitHub Actions + OIDC for full CI/CD automation
+  Removed S3 frontend — Nginx serves index.html directly
+  Full automation: Route 53, ACM cert, account ID injection
 ```
 
 ---
@@ -64,11 +66,13 @@ Stage 3 — Kubernetes on EKS
 ```
 Internet
     ↓
-Route 53 (yourdomain.com)
+Route 53
+  resume.yourdomain.com  → ALB
+  api.yourdomain.com     → ALB
     ↓
-ALB Ingress Controller
+ALB Ingress Controller (one ALB, two rules)
     ↓                         ↓
-yourdomain.com            api.yourdomain.com
+resume.yourdomain.com     api.yourdomain.com
     ↓                         ↓
 Nginx Service             Flask Service
     ↓                         ↓
@@ -99,7 +103,6 @@ Nginx Pods (x2)           Flask Pods (x2-6)
 | S3 (resumes) | PDF resume storage |
 | SES | Confirmation emails |
 | ECR | Docker image registry |
-| CloudFront | CDN + HTTPS for frontend |
 | Route 53 | DNS management |
 | ACM | SSL/TLS certificates |
 | Secrets Manager | Database credentials |
@@ -119,7 +122,6 @@ Nginx Pods (x2)           Flask Pods (x2-6)
 | CI/CD | GitHub Actions |
 | Image Registry | AWS ECR |
 | DNS | AWS Route 53 |
-| CDN | AWS CloudFront |
 | Email | AWS SES |
 | Secrets | AWS Secrets Manager |
 | Pod Auth | IRSA (IAM Roles for Service Accounts) |
@@ -147,7 +149,8 @@ resume-portal-k8s/
 │       ├── vpc/               # VPC, subnets, NAT gateways, SGs
 │       ├── eks/               # EKS cluster, nodes, ALB controller
 │       ├── rds/               # PostgreSQL + Secrets Manager
-│       ├── s3/                # S3 buckets, CloudFront, Route 53
+│       ├── s3/                # S3 resumes bucket, ACM cert, Route 53
+│       ├── ses/               # SES email identity
 │       ├── iam/               # Flask IRSA role, GitHub OIDC role
 │       ├── iam_base/          # EKS cluster and node IAM roles
 │       └── ecr/               # Docker image repositories
@@ -193,19 +196,20 @@ resume-portal-k8s/
 
 - AWS account with admin or sufficient IAM permissions
 - Domain registered and hosted in Route 53
-- SES verified sender email address
+- SES verified sender email address (handled by Terraform SES module)
 - SES production access (or sandbox for testing with verified recipient emails only)
 
 ### GitHub Requirements
 
 - GitHub account and repository
 - GitHub OIDC provider and IAM role created manually (see Phase 1)
+- GitHub secrets: `AWS_ROLE_ARN`, `AWS_ACCOUNT_ID`
 
 ---
 
 ## Phase 1 — Manual Bootstrap
 
-Before anything can run in GitHub Actions, you need to create two things manually — the Terraform state bucket and the GitHub OIDC provider. This is a one-time setup only.
+Before anything can run in GitHub Actions, you need to create three things manually — the Terraform state bucket, the GitHub OIDC provider, and the GitHub Actions IAM role. This is a **one-time setup only**.
 
 ### Step 1 — Configure AWS credentials locally
 
@@ -219,20 +223,15 @@ aws configure
 
 ### Step 2 — Create Terraform state bucket
 
-This bucket stores your Terraform state file. It must exist before running terraform init.
-
 ```bash
-# Create bucket
 aws s3api create-bucket \
   --bucket your-terraform-state-bucket \
   --region us-east-1
 
-# Enable versioning
 aws s3api put-bucket-versioning \
   --bucket your-terraform-state-bucket \
   --versioning-configuration Status=Enabled
 
-# Enable encryption
 aws s3api put-bucket-encryption \
   --bucket your-terraform-state-bucket \
   --server-side-encryption-configuration '{
@@ -256,7 +255,7 @@ backend "s3" {
 
 ### Step 3 — Create GitHub OIDC provider manually
 
-OIDC is what allows GitHub Actions to authenticate with AWS without storing credentials. It must be created before the pipeline can run.
+OIDC allows GitHub Actions to authenticate with AWS without storing credentials. It must exist before the pipeline can run.
 
 ```bash
 aws iam create-open-id-connect-provider \
@@ -289,7 +288,6 @@ aws iam create-role \
     }]
   }'
 
-# Attach admin policy
 aws iam attach-role-policy \
   --role-name resume-portal-github-actions-role \
   --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
@@ -344,11 +342,378 @@ db_instance_class = "db.t3.micro"
 sender_email      = "your-verified-email@gmail.com"
 ```
 
-### Step 2 — Initialize Terraform
+### Step 2 — Initialize and deploy
 
 ```bash
 cd terraform
 terraform init
+terraform fmt -recursive
+terraform validate
+terraform plan
+terraform apply
+```
+
+> Takes approximately 20-25 minutes. EKS and RDS are the slowest resources.
+
+### Step 3 — Connect kubectl
+
+```bash
+aws eks update-kubeconfig \
+  --name resume-portal-cluster \
+  --region us-east-1
+
+kubectl get nodes
+```
+
+---
+
+## Phase 3 — Docker Images
+
+### Login to ECR
+
+```bash
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS \
+  --password-stdin YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
+```
+
+### Build and push Flask image
+
+```bash
+cd app
+docker build -t resume-portal-flask .
+docker tag resume-portal-flask:latest \
+  YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/resume-portal-flask:latest
+docker push \
+  YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/resume-portal-flask:latest
+```
+
+### Build and push Nginx image
+
+```bash
+cd ../frontend
+docker build -t resume-portal-nginx .
+docker tag resume-portal-nginx:latest \
+  YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/resume-portal-nginx:latest
+docker push \
+  YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/resume-portal-nginx:latest
+```
+
+---
+
+## Phase 4 — Kubernetes Manifests
+
+The pipeline handles this automatically. For manual deployment:
+
+```bash
+kubectl apply -f k8s/flask/deployment.yaml
+kubectl apply -f k8s/flask/service.yaml
+kubectl apply -f k8s/flask/hpa.yaml
+kubectl apply -f k8s/nginx/deployment.yaml
+kubectl apply -f k8s/nginx/service.yaml
+kubectl apply -f k8s/ingress.yaml
+
+kubectl get pods
+kubectl get services
+kubectl get ingress
+```
+
+---
+
+## Phase 5 — GitHub Actions CI/CD
+
+### How pipelines trigger
+
+```
+Change in terraform/**  →  terraform.yml runs
+Change in app/**        →  deploy.yml runs
+Change in frontend/**   →  deploy.yml runs
+Change in k8s/**        →  deploy.yml runs
+Pull Request opened     →  terraform plan comment on PR
+```
+
+### Trigger terraform pipeline
+
+```bash
+echo " " >> terraform/terraform.tfvars.example
+git add terraform/terraform.tfvars.example
+git commit -m "trigger: terraform pipeline"
+git push origin main
+```
+
+### Trigger deploy pipeline
+
+```bash
+echo "# trigger" >> app/app.py
+git add app/app.py
+git commit -m "trigger: deploy pipeline"
+git push origin main
+```
+
+---
+
+## Terraform Modules
+
+### `vpc` — Networking
+- VPC (`10.0.0.0/16`) with DNS support
+- 2 public subnets for ALB
+- 2 private subnets for EKS nodes and RDS
+- NAT Gateways for private subnet outbound internet
+- Security group for EKS nodes
+- Security group for RDS — allows port 5432 from EKS nodes SG **and** VPC CIDR
+
+### `iam_base` — EKS Base Roles
+- EKS cluster IAM role
+- EKS node group IAM role with worker node, CNI, and ECR policies
+
+### `eks` — Kubernetes Cluster
+- EKS cluster (Kubernetes 1.32)
+- Managed node group: `t3.medium`, min 1, max 4, desired 2
+- OIDC provider for IRSA
+- ALB Ingress Controller installed via Helm
+- Root account access entry for local kubectl access
+
+### `rds` — Database
+- PostgreSQL 15 on `db.t3.micro`
+- Private subnets, not publicly accessible
+- Encrypted storage, 7-day backup retention
+- Random password stored in AWS Secrets Manager
+
+### `s3` — Storage and Certificates
+- Resumes bucket: private, encrypted, versioned, force_destroy enabled
+- ACM certificate for domain and wildcard (`*.yourdomain.com`)
+- Route 53 DNS validation records for ACM
+
+### `ses` — Email
+- SES email identity for sender email
+- Persists across terraform destroy/apply cycles
+- ⚠️ After first apply check email inbox and click AWS verification link
+
+### `iam` — Pod and CI/CD Permissions
+- Flask pod IRSA role: S3, SES, Secrets Manager access
+- Reads manually created GitHub OIDC provider as data source
+- Reads manually created GitHub Actions role as data source
+
+### `ecr` — Docker Registry
+- `resume-portal-flask` repository
+- `resume-portal-nginx` repository
+- Lifecycle policy: keeps last 10 images
+- `force_delete = true` for clean terraform destroy
+
+---
+
+## Kubernetes Resources
+
+### Flask Deployment
+```
+replicas:         2
+image:            ECR/resume-portal-flask:SHA
+serviceAccount:   flask-sa (IRSA annotated)
+resources:        256Mi-512Mi memory / 250m-500m CPU
+probes:           GET /health :5000
+env:              AWS_REGION, RESUME_BUCKET, DB_SECRET_NAME, SENDER_EMAIL
+init:             Creates DB table on startup automatically
+```
+
+### Nginx Deployment
+```
+replicas:         2
+image:            ECR/resume-portal-nginx:SHA
+resources:        64Mi-128Mi memory / 100m-200m CPU
+probes:           GET /health :80
+serves:           index.html (resume submission form)
+```
+
+### Ingress
+```
+class:            alb
+scheme:           internet-facing
+target-type:      ip
+ssl-redirect:     443
+certificate:      ACM ARN (auto-updated by pipeline)
+
+rules:
+  resume.yourdomain.com  → nginx-service:80
+  api.yourdomain.com     → flask-service:80
+```
+
+### HPA
+```
+target:           flask-deployment
+min replicas:     2
+max replicas:     6
+scale up when:    CPU > 70% or memory > 80%
+```
+
+---
+
+## GitHub Actions Pipelines
+
+### `terraform.yml` — Infrastructure Pipeline
+
+```
+ON PUSH to terraform/**:
+  ├── Configure AWS via OIDC
+  ├── terraform init
+  ├── terraform fmt (auto-fix)
+  ├── terraform validate
+  ├── terraform apply
+  ├── Wait 90 minutes
+  └── terraform destroy
+
+ON PULL REQUEST:
+  ├── terraform plan
+  └── Post plan as PR comment
+```
+
+### `deploy.yml` — Application Pipeline
+
+```
+ON PUSH to app/** frontend/** k8s/**:
+  JOB 1: build-and-deploy
+  ├── Configure AWS via OIDC
+  ├── Build & push Flask image to ECR
+  ├── Build & push Nginx image to ECR
+  ├── Update kubeconfig
+  ├── Auto-update ACM cert ARN in ingress.yaml
+  ├── Auto-inject AWS account ID in k8s manifests
+  ├── kubectl apply all manifests
+  ├── Rolling update Flask pods
+  ├── Rolling update Nginx pods
+  ├── Wait for ALB address (up to 5 min)
+  ├── Auto-update Route 53:
+  │     resume.yourdomain.com → ALB
+  │     api.yourdomain.com    → ALB
+  └── Verify pods/services/ingress/hpa
+
+  JOB 2: destroy (after 30 minutes)
+  ├── kubectl delete all K8s resources
+  ├── Force delete any leftover ALBs
+  ├── terraform destroy
+  └── Confirm complete
+```
+
+### Why delete K8s resources before terraform destroy?
+
+```
+Wrong order:
+  terraform destroy → VPC deletion fails
+                    → ALB still exists (created by K8s ingress)
+                    → Terraform doesn't know about it ❌
+
+Correct order:
+  kubectl delete ingress → AWS deletes the ALB
+  sleep 120              → wait for ALB to fully terminate
+  terraform destroy      → VPC deletes cleanly ✅
+```
+
+---
+
+## Cost Estimate
+
+| Resource | Type | $/hour | $/day |
+|---|---|---|---|
+| EKS Control Plane | Managed | $0.10 | $2.40 |
+| EKS Nodes | 2x t3.medium | $0.10 | $2.40 |
+| RDS | db.t3.micro | $0.02 | $0.48 |
+| NAT Gateways | 2x | $0.09 | $2.16 |
+| ALB | Load Balancer | $0.02 | $0.48 |
+| **Total** | | **~$0.33** | **~$7.92** |
+
+> The destroy job automatically tears down all infrastructure after 30 minutes to minimize costs during testing. ECR images survive the destroy and are reused on the next deployment.
+
+---
+
+## Troubleshooting
+
+### Pods in CrashLoopBackOff
+```bash
+kubectl logs -l app=flask --tail=50
+kubectl describe pods -l app=flask
+```
+
+### Ingress has no ADDRESS
+```bash
+kubectl get pods -n kube-system | grep aws-load-balancer
+kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=20
+kubectl describe ingress resume-portal-ingress
+```
+Most common cause: invalid certificate ARN. The pipeline auto-fixes this on each deploy.
+
+### Flask cannot connect to RDS
+```bash
+# Test connectivity from pod
+kubectl exec -it $(kubectl get pod -l app=flask \
+  -o jsonpath='{.items[0].metadata.name}') -- python3 -c "
+import socket
+s = socket.create_connection(('YOUR_RDS_ENDPOINT', 5432), timeout=5)
+print('Connected!')
+s.close()
+"
+```
+If timeout: check RDS security group allows VPC CIDR `10.0.0.0/16` on port 5432.
+
+### kubectl forbidden error
+```bash
+aws eks associate-access-policy \
+  --cluster-name resume-portal-cluster \
+  --principal-arn arn:aws:iam::YOUR_ACCOUNT_ID:root \
+  --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
+  --access-scope type=cluster \
+  --region us-east-1
+```
+
+### SES email not verified after apply
+Check your email inbox for AWS verification email and click the link. The SES module creates the identity but AWS still requires email confirmation.
+
+### terraform destroy fails — cannot delete VPC
+```bash
+# Delete ALB manually
+aws elbv2 describe-load-balancers \
+  --query 'LoadBalancers[?contains(LoadBalancerName,`k8s`)].LoadBalancerArn' \
+  --output text --region us-east-1
+
+aws elbv2 delete-load-balancer --load-balancer-arn YOUR_ARN --region us-east-1
+sleep 90
+terraform destroy -auto-approve
+```
+
+### Terraform state error after network interruption
+```bash
+terraform state push errored.tfstate
+terraform apply -auto-approve
+```
+
+### GitHub Actions OIDC error on first run
+The OIDC provider or IAM role may not exist. Follow Phase 1 steps 3 and 4 to create them manually before pushing.
+
+---
+
+## Security
+
+| Practice | Implementation |
+|---|---|
+| No hardcoded credentials | All secrets in AWS Secrets Manager |
+| No long-lived CI/CD keys | GitHub Actions uses OIDC temporary tokens |
+| No account IDs in code | Injected at deploy time by pipeline |
+| Least privilege pods | IRSA gives each pod only needed permissions |
+| Private database | RDS in private subnet, no public endpoint |
+| Private compute | EKS nodes in private subnets behind NAT |
+| Encrypted storage | RDS and S3 encrypted at rest with AES256 |
+| Encrypted transit | HTTPS everywhere, HTTP redirects to HTTPS |
+| Network isolation | Security groups restrict RDS access |
+| Image scanning | ECR scans every pushed image automatically |
+| Random passwords | RDS password generated by Terraform |
+
+---
+
+## Author
+
+Built by Guilene — [@Guilene01](https://github.com/Guilene01)
+
+---
+
+> This project was built step by step, fixing real production issues along the way — from a JavaScript typo crashing the form, to IAM permission errors, SES sandbox restrictions, CloudFront routing failures, RDS connectivity issues, and finally a full production-grade migration to Kubernetes. Every error made the architecture stronger.
 ```
 
 ### Step 3 — Validate and format
