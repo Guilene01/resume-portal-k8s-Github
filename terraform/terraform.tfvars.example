@@ -1,9 +1,42 @@
-aws_region      = "us-east-1"
-project_name    = "resume-portal"
-environment     = "prod"
-domain_name     = "yourdomain.com"
-github_username = "your-github-username"
-github_repo     = "resume-portal-k8s-Github" 
- 
- 
- 
+
+# GENERAL SETTINGS
+
+aws_region   = "us-east-1"
+project_name = "resume-portal"
+environment  = "prod"
+
+
+# DOMAIN SETTINGS
+# Your domain must be registered in Route 53
+
+domain_name = "yourdomain.com"
+
+
+# VPC SETTINGS
+
+vpc_cidr             = "10.0.0.0/16"
+availability_zones   = ["us-east-1a", "us-east-1b"]
+public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
+private_subnet_cidrs = ["10.0.3.0/24", "10.0.4.0/24"]
+
+
+# EKS SETTINGS
+
+eks_cluster_version    = "1.32"
+eks_node_instance_type = "t3.medium"
+eks_node_min           = 1
+eks_node_max           = 4
+eks_node_desired       = 2
+
+
+# RDS SETTINGS
+
+db_name           = "portal"
+db_username       = "portaladmin"
+db_instance_class = "db.t3.micro"
+
+
+# SES SETTINGS
+# Must be a verified email in AWS SES
+
+sender_email = "your-verified-email@gmail.com"

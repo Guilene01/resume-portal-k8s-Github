@@ -12,6 +12,7 @@ on:
 env:
   AWS_REGION: us-east-1
   EKS_CLUSTER: resume-portal-cluster
+  DOMAIN_NAME: gamela.shop
   ECR_FLASK: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/resume-portal-flask
   ECR_NGINX: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/resume-portal-nginx
 
@@ -59,11 +60,18 @@ jobs:
         echo "Getting ACM certificate ARN..."
         CERT_ARN=$(aws acm list-certificates \
           --region us-east-1 \
-          --query 'CertificateSummaryList[?DomainName==`gamela.shop`].CertificateArn' \
+          --query "CertificateSummaryList[?DomainName==\`$DOMAIN_NAME\`].CertificateArn" \
           --output text | awk '{print $1}')
         echo "Certificate ARN: $CERT_ARN"
         sed -i "s|alb.ingress.kubernetes.io/certificate-arn:.*|alb.ingress.kubernetes.io/certificate-arn: $CERT_ARN|" k8s/ingress.yaml
         echo "✅ Ingress certificate ARN updated"
+
+    - name: Update K8s manifests with account ID
+      run: |
+        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        sed -i "s|ACCOUNT_ID|$ACCOUNT_ID|g" k8s/flask/deployment.yaml
+        sed -i "s|ACCOUNT_ID|$ACCOUNT_ID|g" k8s/nginx/deployment.yaml
+        echo "✅ Manifests updated with account ID: $ACCOUNT_ID"
 
     - name: Apply K8s manifests
       run: |
@@ -76,6 +84,7 @@ jobs:
 
     - name: Update Flask image
       run: |
+        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
         kubectl set image deployment/flask-deployment \
           flask=$ECR_FLASK:${{ github.sha }}
         kubectl rollout status deployment/flask-deployment --timeout=300s
@@ -116,7 +125,7 @@ jobs:
         fi
 
         ZONE_ID=$(aws route53 list-hosted-zones \
-          --query 'HostedZones[?Name==`gamela.shop.`].Id' \
+          --query "HostedZones[?Name==\`$DOMAIN_NAME.\`].Id" \
           --output text | sed 's|/hostedzone/||')
 
         aws route53 change-resource-record-sets \
@@ -126,7 +135,7 @@ jobs:
               {
                 \"Action\": \"UPSERT\",
                 \"ResourceRecordSet\": {
-                  \"Name\": \"resume.gamela.shop\",
+                  \"Name\": \"resume.$DOMAIN_NAME\",
                   \"Type\": \"A\",
                   \"AliasTarget\": {
                     \"HostedZoneId\": \"Z35SXDOTRQ7X7K\",
@@ -138,7 +147,7 @@ jobs:
               {
                 \"Action\": \"UPSERT\",
                 \"ResourceRecordSet\": {
-                  \"Name\": \"api.gamela.shop\",
+                  \"Name\": \"api.$DOMAIN_NAME\",
                   \"Type\": \"A\",
                   \"AliasTarget\": {
                     \"HostedZoneId\": \"Z35SXDOTRQ7X7K\",
@@ -150,8 +159,8 @@ jobs:
             ]
           }"
         echo "✅ Route 53 updated:"
-        echo "   resume.gamela.shop → $ALB"
-        echo "   api.gamela.shop → $ALB"
+        echo "   resume.$DOMAIN_NAME → $ALB"
+        echo "   api.$DOMAIN_NAME → $ALB"
 
     - name: Verify deployment
       run: |
@@ -164,8 +173,8 @@ jobs:
         echo "=== HPA ==="
         kubectl get hpa
         echo ""
-        echo "✅ Frontend live at https://resume.gamela.shop"
-        echo "✅ API live at https://api.gamela.shop"
+        echo "✅ Frontend live at https://resume.$DOMAIN_NAME"
+        echo "✅ API live at https://api.$DOMAIN_NAME"
         echo "⏳ Infrastructure will be destroyed in 30 minutes..."
 
   destroy:
@@ -184,8 +193,8 @@ jobs:
       run: |
         echo "✅ Deployment successful!"
         echo "⏳ Waiting 30 minutes before destroying..."
-        echo "🌐 Frontend: https://resume.gamela.shop"
-        echo "🌐 API: https://api.gamela.shop"
+        echo "🌐 Frontend: https://resume.${{ env.DOMAIN_NAME }}"
+        echo "🌐 API: https://api.${{ env.DOMAIN_NAME }}"
         for i in $(seq 30 -1 1); do
           echo "⏳ $i minutes remaining..."
           sleep 60

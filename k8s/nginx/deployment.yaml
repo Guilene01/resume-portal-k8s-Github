@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: nginx
-        image: 977098999802.dkr.ecr.us-east-1.amazonaws.com/resume-portal-nginx:latest
+        image: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/resume-portal-nginx:latest
         ports:
         - containerPort: 80
         resources:

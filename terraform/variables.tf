@@ -17,9 +17,9 @@ variable "environment" {
 }
 
 variable "domain_name" {
-  description = "Your domain name"
+  description = "Your domain name (e.g. yourdomain.com)"
   type        = string
-  default     = "gamela.shop"
+  
 }
 
 # VPC
@@ -99,9 +99,8 @@ variable "db_instance_class" {
 
 # SES
 variable "sender_email" {
-  description = "Verified SES sender email"
+  description = "Verified SES sender email address"
   type        = string
-  default     = "guileneerna@gmail.com"
 }
 
 

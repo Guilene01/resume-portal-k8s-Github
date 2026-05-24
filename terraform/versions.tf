@@ -25,11 +25,11 @@ terraform {
   }
 
   backend "s3" {
-    bucket  = "rp-terraform-state-gamela"
-    key     = "resume-portal/terraform.tfstate"
-    region  = "us-east-1"
-    encrypt = true
-  }
+  bucket  = "YOUR_TERRAFORM_STATE_BUCKET"
+  key     = "resume-portal/terraform.tfstate"
+  region  = "us-east-1"
+  encrypt = true
+}
 }
 
 provider "aws" {

@@ -18,7 +18,7 @@ spec:
       serviceAccountName: flask-sa
       containers:
       - name: flask
-        image: 977098999802.dkr.ecr.us-east-1.amazonaws.com/resume-portal-flask:latest
+        image: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/resume-portal-flask:latest
         ports:
         - containerPort: 5000
         env:
@@ -56,4 +56,4 @@ metadata:
   name: flask-sa
   namespace: default
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::977098999802:role/resume-portal-flask-pod-role
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/resume-portal-flask-pod-role
