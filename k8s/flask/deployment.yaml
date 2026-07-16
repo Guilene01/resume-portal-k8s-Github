@@ -21,15 +21,15 @@ spec:
         image: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/resume-portal-flask:latest
         ports:
         - containerPort: 5000
+        envFrom:
+        - configMapRef:
+            name: flask-config
         env:
-        - name: AWS_REGION
-          value: "us-east-1"
-        - name: RESUME_BUCKET
-          value: "resume-portal-resumes-prod"
         - name: DB_SECRET_NAME
-          value: "resume-portal/db-credentials"
-        - name: SENDER_EMAIL
-          value: "guileneerna@gmail.com"
+          valueFrom:
+            secretKeyRef:
+              name: flask-secret
+              key: DB_SECRET_NAME
         resources:
           requests:
             memory: "256Mi"

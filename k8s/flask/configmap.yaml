@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flask-config
+  namespace: default
+  labels:
+    app: flask
+data:
+  AWS_REGION: "us-east-1"
+  RESUME_BUCKET: "resume-portal-resumes-prod"
+  SENDER_EMAIL: "guileneerna@gmail.com"
+  ALLOWED_ORIGIN: "*"

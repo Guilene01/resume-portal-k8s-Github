@@ -75,6 +75,8 @@ jobs:
 
     - name: Apply K8s manifests
       run: |
+        kubectl apply -f k8s/flask/configmap.yaml
+        kubectl apply -f k8s/flask/secret.yaml
         kubectl apply -f k8s/flask/deployment.yaml
         kubectl apply -f k8s/flask/service.yaml
         kubectl apply -f k8s/flask/hpa.yaml
@@ -219,6 +221,8 @@ jobs:
         kubectl delete -f k8s/flask/hpa.yaml --ignore-not-found
         kubectl delete -f k8s/flask/service.yaml --ignore-not-found
         kubectl delete -f k8s/flask/deployment.yaml --ignore-not-found
+        kubectl delete -f k8s/flask/secret.yaml --ignore-not-found
+        kubectl delete -f k8s/flask/configmap.yaml --ignore-not-found
         kubectl delete -f k8s/nginx/service.yaml --ignore-not-found
         kubectl delete -f k8s/nginx/deployment.yaml --ignore-not-found
         echo "⏳ Waiting for ALB to be fully deleted..."

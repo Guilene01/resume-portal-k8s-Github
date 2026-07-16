@@ -406,6 +406,8 @@ docker push \
 The pipeline handles this automatically. For manual deployment:
 
 ```bash
+kubectl apply -f k8s/flask/configmap.yaml
+kubectl apply -f k8s/flask/secret.yaml
 kubectl apply -f k8s/flask/deployment.yaml
 kubectl apply -f k8s/flask/service.yaml
 kubectl apply -f k8s/flask/hpa.yaml
@@ -806,6 +808,8 @@ aws ecr describe-images \
 
 ```bash
 # Flask backend
+kubectl apply -f k8s/flask/configmap.yaml
+kubectl apply -f k8s/flask/secret.yaml
 kubectl apply -f k8s/flask/deployment.yaml
 kubectl apply -f k8s/flask/service.yaml
 kubectl apply -f k8s/flask/hpa.yaml
